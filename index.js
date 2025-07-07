@@ -33,7 +33,7 @@ const exerciseSchema = new Schema({
   userId: { type: String, required: true },
   description: String,
   duration: Number,
-  date: String,
+  date: { type: Date, default: Date.now },
 });
 
 const User = mongoose.model("User", userSchema);
@@ -82,51 +82,37 @@ app.post("/api/users/:_id/exercises", async (req, res) => {
 
 // Get user logs
 app.get("/api/users/:_id/logs", async (req, res) => {
-  try {
-    const { from, to, limit } = req.query;
-    const userId = req.params._id;
+  const { from, to, limit } = req.query;
+  const user = await User.findById(req.params._id);
+  if (!user) return res.json({ error: "User not found" });
 
-    const user = await User.findById(userId);
-    if (!user) return res.json({ error: "User not found" });
+  let filter = { userId: req.params._id };
 
-    let dateFilter = {};
-
-    if (from) {
-      dateFilter.$gte = new Date(from);
-    }
-    if (to) {
-      dateFilter.$lte = new Date(to);
-    }
-
-    let filter = { userId: userId };
-    if (from || to) {
-      filter.date = dateFilter;
-    }
-
-    let query = Exercise.find(filter).select("-_id description duration date");
-
-    if (limit) {
-      query = query.limit(parseInt(limit));
-    }
-
-    const log = await query.exec();
-
-    const formattedLog = log.map((e) => ({
-      description: e.description,
-      duration: e.duration,
-      date: new Date(e.date).toDateString(),
-    }));
-
-    res.json({
-      username: user.username,
-      _id: user._id,
-      count: formattedLog.length,
-      log: formattedLog,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
+  // Build date filter if applicable
+  if (from || to) {
+    filter.date = {};
+    if (from) filter.date.$gte = new Date(from);
+    if (to) filter.date.$lte = new Date(to);
   }
+
+  let query = Exercise.find(filter).select("description duration date");
+
+  if (limit) query = query.limit(parseInt(limit));
+
+  const exercises = await query.exec();
+
+  const formattedLog = exercises.map((ex) => ({
+    description: ex.description,
+    duration: ex.duration,
+    date: ex.date.toDateString(), // Format back to readable string
+  }));
+
+  res.json({
+    username: user.username,
+    _id: user._id,
+    count: formattedLog.length,
+    log: formattedLog,
+  });
 });
 
 // Start server
